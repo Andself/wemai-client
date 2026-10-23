@@ -1,0 +1,2 @@
+groups = ["YOUR_EXACT_GROUP_NAME"]
+send_enabled = false

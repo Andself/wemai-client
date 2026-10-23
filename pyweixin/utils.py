@@ -1,3 +1,4 @@
+from window_binding import find_window
 import re
 import os
 import time
@@ -7,13 +8,14 @@ import pyautogui
 import soundfile as sf
 import sounddevice as sd
 from packaging import version
-from pywinauto import WindowSpecification,Desktop,mouse
+from pywinauto import WindowSpecification, mouse
+from window_binding import Desktop
 from .Config import GlobalConfig
 from .WeChatTools import Navigator,Tools
 from .WinSettings import SystemSettings
 from .Uielements import Main_window,SideBar,Buttons,Edits,Lists,Windows,Texts,MenuItems,Special_Labels,Regex_Patterns
 #######################################################################################
-pyautogui.FAILSAFE=False#防止鼠标在屏幕边缘处造成的误触
+pyautogui.FAILSAFE=True#防止鼠标在屏幕边缘处造成的误触
 desktop=Desktop(backend='uia')#windows桌面WindowSpecification示例
 
 class ColorMatch():
@@ -367,7 +369,7 @@ def NativeChooseFolder(folder:str):
     '''
     time.sleep(1)
     SystemSettings.copy_text_to_clipboard(folder)
-    hwnd=win32gui.FindWindow(None,Special_Labels.SelectFolder)
+    hwnd=find_window(None,Special_Labels.SelectFolder)
     choose_folder_window=desktop.window(handle=hwnd)
     choose_folder_button=choose_folder_window.child_window(control_type='Button',title='选择文件夹')
     prograss_bar=choose_folder_window.child_window(control_type='ProgressBar',class_name='msctls_progress32',framework_id='Win32')

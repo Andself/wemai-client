@@ -1,4 +1,5 @@
 from __future__ import annotations
+from window_binding import find_window
 
 import hashlib
 import logging
@@ -148,10 +149,10 @@ class WeChatListener:
         # 保存主窗口引用供全局扫描使用
         try:
             import win32gui
-            hwnd = win32gui.FindWindow('Qt51514QWindowIcon', '微信')
+            hwnd = find_window('Qt51514QWindowIcon', '微信')
             if hwnd == 0:
-                hwnd = win32gui.FindWindow('Qt51514QWindowIcon', 'Weixin')
-            from pywinauto import Desktop
+                hwnd = find_window('Qt51514QWindowIcon', 'Weixin')
+            from window_binding import Desktop
             desktop = Desktop(backend='uia')
             self._main_window = desktop.window(handle=hwnd)
         except Exception as e:
@@ -176,8 +177,10 @@ class WeChatListener:
 
         last_heartbeat = time.time()
         last_global_scan = 0.0
+        from window_binding import assert_bound
         while self._running:
             try:
+                assert_bound()
                 now = time.time()
                 self._poll_all_windows(self._last_seen)
                 self._open_pending_windows()
@@ -255,46 +258,12 @@ class WeChatListener:
         logger.info("已打开 %d 个独立窗口", opened)
 
     def _global_scan(self, Navigator, Monitor) -> None:
-        if self._include_muted:
-            self._global_scan_all(Navigator, Monitor)
-        else:
-            self._global_scan_normal(Navigator, Monitor)
-        self._check_new_friends()
+        return  # Restricted build: no discovery, friend or member scans.
 
     _SEEN_FRIEND: set[str] = set()
 
     def _check_new_friends(self) -> None:
-        """检查新的朋友请求"""
-        now = time.time()
-        if now - self._last_friend_check < 60:
-            return
-        self._last_friend_check = now
-        try:
-            from pyweixin import Contacts
-            new_friends = Contacts.check_new_friends(verify=False, limit=8, clear=False)
-            if not new_friends:
-                return
-            for detail in new_friends:
-                if detail in self._SEEN_FRIEND:
-                    logger.debug("好友请求已处理过，跳过: %s", detail)
-                    continue
-                self._SEEN_FRIEND.add(detail)
-                if len(self._SEEN_FRIEND) > 1000:
-                    self._SEEN_FRIEND.clear()
-                # 跳过已处理（已添加/已过期）的旧请求
-                if "已添加" in detail or "已过期" in detail:
-                    logger.debug("好友请求已过期/已添加，跳过: %s", detail)
-                    continue
-                if self._on_friend_request:
-                    logger.info("检测到好友请求: %s", detail)
-                    self._on_friend_request({
-                        "type": "friend_request",
-                        "content": detail[:200],
-                        "details": detail,
-                        "admin_chats": list(self._admin_chats),
-                    })
-        except Exception as e:
-            logger.debug("检查好友请求异常: %s", e)
+        return  # Restricted build: no discovery, friend or member scans.
 
     def _global_scan_normal(self, Navigator, Monitor) -> None:
         """常规扫描：跳过免打扰聊天"""
@@ -424,12 +393,12 @@ class WeChatListener:
         """将主窗口的会话列表滚回顶部"""
         try:
             import win32gui
-            from pywinauto import Desktop
+            from window_binding import Desktop
             from pyweixin.Uielements import Main_window as MainWindowUI
             desktop = Desktop(backend='uia')
-            hwnd = win32gui.FindWindow('Qt51514QWindowIcon', '微信')
+            hwnd = find_window('Qt51514QWindowIcon', '微信')
             if hwnd == 0:
-                hwnd = win32gui.FindWindow('Qt51514QWindowIcon', 'Weixin')
+                hwnd = find_window('Qt51514QWindowIcon', 'Weixin')
             if hwnd:
                 mw = desktop.window(handle=hwnd)
                 # 聚焦主窗口，确保键盘操作不会打到桌面
@@ -546,22 +515,7 @@ class WeChatListener:
                 logger.debug("打开窗口 [%s] 失败: %s", chat, e)
 
     def _ensure_group_members(self, chat: str) -> None:
-        """确保已有群聊的成员清单。"""
-        if chat in self._excluded:
-            return
-        if not self._chat_group_status.get(chat, False):
-            return
-        if self._chat_group_members.get(chat):
-            return
-        try:
-            from pyweixin import Contacts, GlobalConfig as _G
-            _G.close_weixin = False
-            members = Contacts.get_groupMembers_info(group=chat, close_weixin=False)
-            if members:
-                self._chat_group_members[chat] = members
-                logger.info("群成员清单 [%s]: %d 人", chat, len(members))
-        except Exception as e:
-            logger.warning("获取群成员 [%s] 失败: %s", chat, e)
+        return  # Restricted build: no discovery, friend or member scans.
 
     def _poll_all_windows(self, last_seen: dict[str, Any]) -> None:
         for chat_name, dw in list(self._dialog_windows.items()):
@@ -729,7 +683,8 @@ class WeChatListener:
                 is_group = self._chat_group_status.get(chat_name, False)
                 logger.info("语音转文字: 检测到语音消息, chat=%s is_group=%s text=%r", chat_name, is_group, text[:100])
                 try:
-                    from pywinauto import mouse, Desktop
+                    from pywinauto import mouse
+                    from window_binding import Desktop
                     desk = Desktop(backend="uia")
 
                     if is_group:
@@ -863,7 +818,8 @@ class WeChatListener:
     def _activate_multiselect(self, chat_name: str, dw) -> bool:
         """对独立窗口激活多选模式。成功后 CheckBox.window_text() 变为 '发送人 消息内容'。"""
         try:
-            from pywinauto import mouse, Desktop
+            from pywinauto import mouse
+            from window_binding import Desktop
 
             # 只对群聊激活
             if not self._chat_group_status.get(chat_name, False):

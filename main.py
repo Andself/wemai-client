@@ -15,7 +15,10 @@ import config as cfg_mod
 from ws_client import WsPluginClient
 from wx_listener import WeChatListener
 from wx_sender import WeChatSender
-from wx_moments import WeChatMoments
+import tomllib
+from pathlib import Path
+from safety_policy import GroupPolicy
+from window_binding import initialize, verify_account, assert_bound
 
 logger = logging.getLogger("wemai_client.main")
 _stop_event = threading.Event()
@@ -40,6 +43,13 @@ def handle_signal(sig, frame) -> None:
 
 class WeMaiClient:
     def __init__(self, cfg: cfg_mod.ClientConfig) -> None:
+        policy_path = Path(__file__).with_name('safety.toml')
+        settings = tomllib.loads(policy_path.read_text(encoding='utf-8'))
+        self._policy = GroupPolicy(tuple(settings.get('groups', [])), settings.get('send_enabled') is True)
+        if not self._policy.groups:
+            raise RuntimeError('Explicit local group allowlist is required.')
+        cfg.wechat.target_chats = list(self._policy.groups)
+        cfg.wechat.admin_chats = []
         self._cfg = cfg
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ws = WsPluginClient(
@@ -56,6 +66,8 @@ class WeMaiClient:
         self._listener: WeChatListener | None = None
 
     async def run(self) -> None:
+        initialize()
+        verify_account()
         self._loop = asyncio.get_running_loop()
         logger.info("=" * 50)
         logger.info("WeMai Client - 微信 × MaiBot 桥接客户端")
@@ -84,6 +96,7 @@ class WeMaiClient:
         self._sender.set_pre_send_hook(listener.begin_send)
         self._sender.set_post_send_hook(listener.mark_sent)
         
+        self._sender._safety_policy = self._policy
         self._sender.start()
         listener.start()
 
@@ -91,6 +104,7 @@ class WeMaiClient:
 
         try:
             while not _stop_event.is_set():
+                assert_bound()
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
             pass
@@ -107,118 +121,32 @@ class WeMaiClient:
             logger.info("所有组件已停止")
 
     def _on_config_update(self, msg: dict) -> None:
+        # Remote configuration can only reduce local scope.
         if self._listener is not None:
-            admin = msg.get("admin", "")
-            self._listener.merge_remote_targets(
-                enable_filter=msg.get("enable_filter", False),
-                group_list=msg.get("group_list", []),
-                private_list=msg.get("private_list", []),
-            )
-            if admin:
-                self._listener.set_admin_chats([admin])
-            logger.info("已同步 Adapter 配置: filter=%s, groups=%s, private=%s, admin=%s",
-                         msg.get("enable_filter"), msg.get("group_list"), msg.get("private_list"), admin)
+            self._listener.merge_remote_targets(True, self._policy.remote_groups(msg.get('group_list', [])), [])
+            self._listener._target_chats = self._policy.remote_groups(msg.get('group_list', []))
 
     def _handle_moment_command(self, msg: dict) -> None:
-        """处理来自 Adapter 的朋友圈命令"""
-        req_id = msg.get("request_id", "")
-        cmd = msg.get("type", "")
-        
-        if cmd == "moment_read":
-            limit = msg.get("limit", 10)
-            try:
-                posts = WeChatMoments.read_recent(number=limit)
-            except Exception as e:
-                logger.error("读取朋友圈失败: %s", e)
-                posts = []
-            logger.info("朋友圈读取: %d 条", len(posts))
-            self._send_moment_response(req_id, {"moments": posts, "count": len(posts)})
-        
-        elif cmd == "moment_post":
-            text = msg.get("text", "")
-            try:
-                ok = WeChatMoments.post_moment(text=text)
-                logger.info("发布朋友圈: %s → %s", text[:40], "成功" if ok else "失败")
-            except Exception as e:
-                logger.error("发布朋友圈失败: %s", e)
-                ok = False
-            self._send_moment_response(req_id, {"success": ok, "text": text})
+        return
 
     def _send_moment_response(self, req_id: str, data: dict) -> None:
-        """发送朋友圈响应回 Adapter"""
-        payload = {"type": "moment_response", "request_id": req_id, **data}
-        if self._loop is not None and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(
-                self._ws.send_inbound(payload),
-                self._loop,
-            )
+        return
 
     def _on_wechat_message(self, msg: dict) -> None:
-        logger.info("微信: [%s] %s: %s", msg["chat"], msg["sender"], msg["content"][:60])
+        if not self._policy.inbound(msg):
+            return
+        assert_bound()
         if self._loop is not None and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._ws.send_inbound(msg),
-                self._loop,
-            )
-            future.add_done_callback(lambda f: logger.info(
-                "发送到 Adapter %s", "成功" if f.result() else "失败"
-            ))
+            asyncio.run_coroutine_threadsafe(self._ws.send_inbound(msg), self._loop)
 
     def _on_friend_request(self, msg: dict) -> None:
-        logger.info("好友请求: %s", msg.get("content", ""))
-        if self._loop is not None and self._loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                self._ws.send_inbound(msg),
-                self._loop,
-            )
-            future.add_done_callback(lambda f: logger.info(
-                "好友请求发送到 Adapter %s", "成功" if f.result() else "失败"
-            ))
+        return
 
     def _on_plugin_outbound(self, msg: dict) -> None:
-        msg_type = msg.get("type", "")
-        if msg_type == "ack":
-            logger.info("Adapter ACK: original=%s success=%s error=%s",
-                        msg.get("original_type"), msg.get("success"), msg.get("error", "无"))
+        if not self._policy.outbound(msg):
+            logger.warning('Outbound command rejected by local policy')
             return
-        
-        # 朋友圈命令处理
-        if msg_type in ("moment_read", "moment_post"):
-            self._handle_moment_command(msg)
-            return
-
-        if msg_type == "friend_approve":
-            friend_name = msg.get("friend_name", "")
-            if friend_name:
-                logger.info("收到好友批准指令: %s", friend_name)
-                try:
-                    from pyweixin import Contacts
-                    Contacts.check_new_friends(verify=True, limit=1, clear=True)
-                    logger.info("好友申请已验证: %s", friend_name)
-                except Exception as e:
-                    logger.warning("验证好友失败: %s", e)
-            return
-
-        if msg_type == "friend_dismiss":
-            friend_name = msg.get("friend_name", "")
-            if friend_name:
-                logger.info("收到好友忽略指令: %s", friend_name)
-                try:
-                    from pyweixin import Contacts
-                    Contacts.check_new_friends(verify=False, limit=8, clear=True)
-                    logger.info("好友请求已清除: %s", friend_name)
-                except Exception as e:
-                    logger.warning("清除好友请求失败: %s", e)
-            return
-
-        receiver = msg.get("receiver", "")
-        segments = msg.get("segments", [])
-        at_members = msg.get("at_members", [])
-        if not receiver or not segments:
-            return
-        self._outbound_queue.put({"receiver": receiver, "segments": segments, "at_members": at_members})
-        for seg in segments:
-            logger.info("MaiBot → [%s]: %s", receiver, seg.get("data", "")[:60])
+        self._outbound_queue.put(msg)
 
 
 async def async_main() -> None:
@@ -229,6 +157,9 @@ async def async_main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
 
     client = WeMaiClient(cfg)
+    if not client._policy.send_enabled:
+        logger.warning("Disabled by default. Use diagnose.py first; bridge was not started.")
+        return
     await client.run()
 
 

@@ -5,3 +5,10 @@ pywin32>=300
 psutil>=5.9.0
 Pillow>=9.0.0
 packaging>=20.0
+
+# Required by the bundled pyweixin imports
+emoji>=2.0
+soundfile>=0.12
+sounddevice>=0.5
+pycaw>=20240210
+comtypes>=1.4

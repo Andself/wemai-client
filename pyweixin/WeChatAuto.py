@@ -1,3 +1,4 @@
+from window_binding import find_window
 '''
 WeChatAuto
 ===========
@@ -470,7 +471,7 @@ class Contacts():
             is_maximize=GlobalConfig.is_maximize
         if close_weixin is None:
             close_weixin=GlobalConfig.close_weixin
-        wxid=Tools.get_current_wxid()
+        wxid="" # Account binding verifies the visible stable WeChat ID; no process-memory scan.
         profile_pane,main_window=Navigator.open_my_profile(is_maximize=is_maximize)
         group=profile_pane.child_window(control_type='Group',found_index=3).children()[1]
         text_ctrls=group.descendants(control_type='Text')
@@ -510,7 +511,7 @@ class Contacts():
             Tools.cancel_pin(chat_history_window)
             chat_history_window.child_window(**TabItems.GroupMembersTabItem).click_input()
             time.sleep(1)
-            hwnd=win32gui.FindWindow(None,'Weixin')
+            hwnd=find_window(None,'Weixin')
             pop_over=desktop.window(handle=hwnd)
             groupMember_list=pop_over.child_window(control_type='List')
             groupMember_list.type_keys('{PGUP}')#激活列表
@@ -3829,7 +3830,7 @@ class Messages():
             win32gui.SendMessage(chat_history_window.handle,win32con.WM_SYSCOMMAND,win32con.SC_MAXIMIZE,0)
             chat_history_window.child_window(**TabItems.GroupMembersTabItem).click_input()
             time.sleep(1)#先让窗口出现再查找
-            hwnd=win32gui.FindWindow(None,'Weixin')
+            hwnd=find_window(None,'Weixin')
             pop_over=desktop.window(handle=hwnd)
             groupMember_list=pop_over.child_window(control_type='List')
             groupMember_list.type_keys('{PGUP}')#激活列表

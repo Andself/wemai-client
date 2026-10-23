@@ -28,3 +28,9 @@ test/saved_images/
 
 # Backup files
 *.bak
+
+# Local identity and chat policy
+safety.toml
+binding*.json
+*.log
+__pycache__/

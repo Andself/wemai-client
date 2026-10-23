@@ -1,3 +1,4 @@
+from window_binding import find_window, assert_bound
 '''
  
 WeChatTools
@@ -95,7 +96,8 @@ import win32gui
 import win32con
 from typing import Literal
 from packaging import version
-from pywinauto import mouse,Desktop
+from pywinauto import mouse
+from window_binding import Desktop
 from pywinauto.controls.uia_controls import ListViewWrapper,ListItemWrapper,EditWrapper #TypeHint要用到
 from pywinauto import WindowSpecification
 #################内部依赖############################################
@@ -174,7 +176,7 @@ class Tools():
         for process in psutil.process_iter(['pid', 'name','cmdline']):
             if process.info['name']=='Weixin.exe':
                 possible_process.append(process)
-        weixin_process=next((proc for proc in possible_process if not any('--type' in arg for arg in proc.info['cmdline'] or [])),None)
+        weixin_process=psutil.Process(assert_bound().pid)
         if not weixin_process:
             return ''
         #只要微信登录了,就一定会用到本地聊天文件保存位置:xwechat_files下的wxid文件夹db_storage内的MMKV文件,这是微信用来快速读写本地的sqlite数据库
@@ -672,8 +674,8 @@ class Navigator():
             window_size=GlobalConfig.window_size
         if not Tools.is_weixin_running():
             raise NotStartError
-        hwnd=win32gui.FindWindow('Qt51514QWindowIcon','微信')
-        if hwnd==0:hwnd=win32gui.FindWindow('Qt51514QWindowIcon','Weixin')
+        hwnd=find_window('Qt51514QWindowIcon','微信')
+        if hwnd==0:hwnd=find_window('Qt51514QWindowIcon','Weixin')
         main_window=desktop.window(handle=hwnd)
         if main_window.class_name()=='mmui::LoginWindow':
             raise NotLoginError
@@ -879,7 +881,7 @@ class Navigator():
         coords=(rec.mid_point().x,rec.top-40)
         mouse.click(coords=coords)
         time.sleep(1)
-        hwnd=win32gui.FindWindow(None,'Weixin')
+        hwnd=find_window(None,'Weixin')
         profile_pane=desktop.window(handle=hwnd)
         return profile_pane,main_window
 

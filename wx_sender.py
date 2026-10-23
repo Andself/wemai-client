@@ -57,6 +57,11 @@ class WeChatSender:
                 logger.error("发送失败: %s", e)
 
     def _do_send(self, item: dict) -> None:
+        from window_binding import verify_account
+        policy = getattr(self, '_safety_policy', None)
+        if policy is None or not policy.outbound(item):
+            raise RuntimeError('Outbound blocked by local policy')
+        verify_account()
         receiver = item.get("receiver", "")
         segments = item.get("segments", [])
         at_members = item.get("at_members", [])
