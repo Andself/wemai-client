@@ -66,10 +66,22 @@ def verify_account():
     # Called before starting workers and immediately before each outgoing item.
     from pyweixin import Contacts
     b = assert_bound()
+    assert_ui_access(b.handle)
     info = Contacts.check_my_info(close_weixin=False)
     if info.get('昵称') != _nickname or info.get('微信号') != _account_id:
         raise BindingError('Account identity mismatch; sending prohibited.')
     b.validate(current_identity(b.handle))
+
+
+def assert_ui_access(handle):
+    """Reject render-only roots before profile clicks or any worker starts."""
+    root = Desktop(backend='uia').window(handle=handle)
+    if not root.descendants(control_type='Button'):
+        raise BindingError(
+            'WeChat exposes no UIA buttons for this account. '
+            'This UIA build cannot read or send; an OCR backend is required. '
+            'Do not enable the bridge or switch to the primary account.'
+        )
 
 
 def find_window(class_name, title):

@@ -25,3 +25,7 @@ python -m unittest -v test_safety
 This build has offline policy tests, not a completed live integration test on WeChat 4.1.15.56. Upstream UI selectors and keyboard/mouse automation remain version-dependent. Foreground focus can change during automation; process-scoped selectors do not provide OS-level input isolation. Do not interact with the primary account while validating automated input. Account verification and sending are not an atomic operation. A separate Windows session/device is stronger isolation than same-desktop multi-open.
 
 No automatic messages have been sent by this development workflow.
+
+## Render-only UI roots
+
+A preflight check now rejects account windows with no UIA Button controls before opening profiles or starting workers. In that case this backend is unsupported; an OCR backend must be implemented and validated separately. Do not switch to a primary account to obtain UIA access.

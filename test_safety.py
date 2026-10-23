@@ -66,7 +66,8 @@ class SafetyTests(unittest.TestCase):
                  patch.object(window_binding, '_identity', b), \
                  patch.object(window_binding, '_nickname', 'expected'), \
                  patch.object(window_binding, '_account_id', 'expected-id'), \
-                 patch.object(window_binding, 'current_identity', return_value=b):
+                 patch.object(window_binding, 'current_identity', return_value=b), \
+                 patch.object(window_binding, 'assert_ui_access'):
                 with self.assertRaises(BindingError):
                     window_binding.verify_account()
 
@@ -77,8 +78,16 @@ class SafetyTests(unittest.TestCase):
              patch.object(window_binding, '_identity', b), \
              patch.object(window_binding, '_nickname', 'expected'), \
              patch.object(window_binding, '_account_id', 'expected-id'), \
-             patch.object(window_binding, 'current_identity', return_value=b):
+             patch.object(window_binding, 'current_identity', return_value=b), \
+             patch.object(window_binding, 'assert_ui_access'):
             window_binding.verify_account()
+
+    def test_render_only_window_stops_before_input(self):
+        fake_root = SimpleNamespace(descendants=lambda **kw: [])
+        fake_desktop = SimpleNamespace(window=lambda **kw: fake_root)
+        with patch.object(window_binding, 'Desktop', return_value=fake_desktop):
+            with self.assertRaisesRegex(BindingError, 'OCR backend is required'):
+                window_binding.assert_ui_access(100)
 
 
 if __name__ == '__main__':
